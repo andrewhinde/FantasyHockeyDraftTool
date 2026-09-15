@@ -23,6 +23,16 @@ const GOALIE_SCORING = {
   shutouts: 1,
 };
 
+const POSITION_ORDER = ['C', 'LW', 'RW', 'D', 'G'];
+
+function normalizePosition(code) {
+  if (code === 'C') return 'C';
+  if (code === 'L') return 'LW';
+  if (code === 'R') return 'RW';
+  if (code === 'D') return 'D';
+  return null;
+}
+
 const delay = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
 
 async function fetchJson(url) {
@@ -91,7 +101,7 @@ function round(value, places = 2) {
 const players = new Map();
 
 function getPlayer(id) {
-  if (!players.has(id)) players.set(id, { id, position: null, team: '', name: '', seasons: {} });
+  if (!players.has(id)) players.set(id, { id, _positions: new Set(), team: '', name: '', seasons: {} });
   return players.get(id);
 }
 
@@ -107,8 +117,8 @@ for (const seasonId of SEASONS) {
   for (const row of summary) {
     if (!(row.gamesPlayed > 0)) continue;
     const player = getPlayer(row.playerId);
-    const code = row.positionCode;
-    player.position = code === 'D' ? 'D' : 'F';
+    const position = normalizePosition(row.positionCode);
+    if (position) player._positions.add(position);
     player.name = row.skaterFullName;
     if (row.teamAbbrevs) player.team = row.teamAbbrevs;
     const rt = realtimeByPlayer.get(row.playerId) ?? {};
@@ -128,7 +138,7 @@ for (const seasonId of SEASONS) {
   for (const row of goalies) {
     if (!(row.gamesPlayed > 0)) continue;
     const player = getPlayer(row.playerId);
-    player.position = 'G';
+    player._positions.add('G');
     player.name = row.goalieFullName;
     if (row.teamAbbrevs) player.team = row.teamAbbrevs;
     const season = {
@@ -152,11 +162,15 @@ for (const player of players.values()) {
   const last = ordered[ordered.length - 1];
   const totals = played.map((s) => s.overall);
   const stdDev = sampleStdDev(totals);
+  const positions = [...player._positions].sort(
+    (a, b) => POSITION_ORDER.indexOf(a) - POSITION_ORDER.indexOf(b)
+  );
 
   output.push({
     id: player.id,
     name: player.name,
-    position: player.position,
+    position: positions[0] ?? null,
+    positions,
     team: player.team,
     goals: last.goals ?? 0,
     assists: last.assists ?? 0,

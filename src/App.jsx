@@ -21,8 +21,16 @@ const COLUMNS = [
 
 const STORAGE_DRAFTED = 'nhl-fantasy-draft:drafted';
 const STORAGE_COLUMNS = 'nhl-fantasy-draft:columns';
+const STORAGE_POSITIONS = 'nhl-fantasy-draft:positions';
 
-const POSITION_LABELS = { F: 'Forward', D: 'Defense', G: 'Goalie' };
+const POSITIONS = ['C', 'LW', 'RW', 'D', 'G'];
+const POSITION_LABELS = {
+  C: 'Center',
+  LW: 'Left Wing',
+  RW: 'Right Wing',
+  D: 'Defense',
+  G: 'Goalie',
+};
 
 function loadDrafted() {
   try {
@@ -43,6 +51,15 @@ function loadColumns() {
   return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));
 }
 
+function loadPositions() {
+  try {
+    const raw = localStorage.getItem(STORAGE_POSITIONS);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
 function formatNumber(value) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '—';
   if (Number.isInteger(value)) return String(value);
@@ -57,6 +74,25 @@ function App() {
   const [sortDir, setSortDir] = useState('desc');
   const [visibleColumns, setVisibleColumns] = useState(loadColumns);
   const [drafted, setDrafted] = useState(loadDrafted);
+  const [editedPositions, setEditedPositions] = useState(loadPositions);
+
+  const getPositions = (player) => {
+    const edited = editedPositions[player.id];
+    return edited && edited.length ? edited : player.positions;
+  };
+
+  const togglePosition = (playerId, pos) => {
+    setEditedPositions((prev) => {
+      const current = prev[playerId] ?? [];
+      const has = current.includes(pos);
+      const next = has ? current.filter((p) => p !== pos) : [...current, pos].sort((a, b) => POSITIONS.indexOf(a) - POSITIONS.indexOf(b));
+      const map = { ...prev };
+      if (next.length) map[playerId] = next;
+      else delete map[playerId];
+      localStorage.setItem(STORAGE_POSITIONS, JSON.stringify(map));
+      return map;
+    });
+  };
 
   const toggleDrafted = (playerId) => {
     setDrafted((prev) => {
