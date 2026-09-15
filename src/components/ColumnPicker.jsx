@@ -7,7 +7,7 @@ function ColumnPicker({ columns, visible, onChange }) {
           const checked = visible.has(col.key);
           const locked = col.key === 'name';
           return (
-            <label key={col.key} className="checkbox">
+            <label key={col.key} className="checkbox" title={col.help}>
               <input
                 type="checkbox"
                 checked={checked}

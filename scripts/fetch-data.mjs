@@ -24,6 +24,7 @@ const GOALIE_SCORING = {
 };
 
 const POSITION_ORDER = ['C', 'LW', 'RW', 'D', 'G'];
+const PRIOR_GAMES = 30;
 
 function normalizePosition(code) {
   if (code === 'C') return 'C';
@@ -84,13 +85,6 @@ function goalieScore(row) {
     total += (row[stat] ?? 0) * value;
   }
   return total;
-}
-
-function sampleStdDev(values) {
-  if (values.length < 2) return null;
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  const variance = values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / (values.length - 1);
-  return Math.sqrt(variance);
 }
 
 function round(value, places = 2) {
@@ -155,21 +149,64 @@ for (const seasonId of SEASONS) {
   console.log(`${seasonId}: ${summary.length} skaters, ${goalies.length} goalies`);
 }
 
+for (const player of players.values()) {
+  const played = SEASONS.map((s) => player.seasons[s]).filter((s) => s && s.gamesPlayed > 0);
+  let totalGP = 0;
+  let weightedSum = 0;
+  for (const s of played) {
+    const fppg = s.overall / s.gamesPlayed;
+    totalGP += s.gamesPlayed;
+    weightedSum += s.gamesPlayed * fppg;
+  }
+  const meanFppg = totalGP > 0 ? weightedSum / totalGP : 0;
+  let variance = 0;
+  for (const s of played) {
+    const fppg = s.overall / s.gamesPlayed;
+    variance += s.gamesPlayed * (fppg - meanFppg) ** 2;
+  }
+  const stdDevFppg = totalGP > 0 ? Math.sqrt(variance / totalGP) : 0;
+  player._totalGP = totalGP;
+  player._meanFppg = meanFppg;
+  player._stdDevFppg = stdDevFppg;
+  player._seasonCount = played.length;
+}
+
+const baselineTotals = {};
+for (const player of players.values()) {
+  const primary = [...player._positions].sort(
+    (a, b) => POSITION_ORDER.indexOf(a) - POSITION_ORDER.indexOf(b)
+  )[0];
+  if (!primary || player._totalGP === 0) continue;
+  const acc = baselineTotals[primary] ?? { gp: 0, sum: 0 };
+  acc.gp += player._totalGP;
+  acc.sum += player._totalGP * player._meanFppg;
+  baselineTotals[primary] = acc;
+}
+const baselines = {};
+for (const [pos, acc] of Object.entries(baselineTotals)) {
+  baselines[pos] = acc.gp > 0 ? acc.sum / acc.gp : 0;
+}
+
 const output = [];
 for (const player of players.values()) {
   const ordered = SEASONS.map((s) => player.seasons[s]).filter(Boolean);
-  const played = ordered.filter((s) => s.gamesPlayed > 0);
   const last = ordered[ordered.length - 1];
-  const totals = played.map((s) => s.overall);
-  const stdDev = sampleStdDev(totals);
   const positions = [...player._positions].sort(
     (a, b) => POSITION_ORDER.indexOf(a) - POSITION_ORDER.indexOf(b)
   );
+  const primary = positions[0] ?? null;
+  const mean = player._meanFppg;
+  const std = player._stdDevFppg;
+  const baseline = primary ? (baselines[primary] ?? 0) : 0;
+  const reliability = player._totalGP / (player._totalGP + PRIOR_GAMES);
+  const adjustedFppg = mean * reliability + baseline * (1 - reliability);
+  const consistency =
+    player._seasonCount >= 2 && mean > 0 && std > 0 ? std / mean : null;
 
   output.push({
     id: player.id,
     name: player.name,
-    position: positions[0] ?? null,
+    position: primary,
     positions,
     team: player.team,
     goals: last.goals ?? 0,
@@ -183,7 +220,11 @@ for (const player of players.values()) {
     saves: last.saves ?? 0,
     shutouts: last.shutouts ?? 0,
     overall: round(last.overall ?? 0),
-    stdDev: stdDev === null ? null : round(stdDev),
+    fppg: round(mean),
+    adjustedFppg: round(adjustedFppg),
+    stdDev: player._seasonCount >= 2 ? round(std) : null,
+    consistency: consistency === null ? null : round(consistency, 3),
+    reliability: round(reliability, 3),
     seasons: player.seasons,
   });
 }

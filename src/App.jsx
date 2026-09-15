@@ -15,12 +15,16 @@ const COLUMNS = [
   { key: 'losses', label: 'L', defaultVisible: true },
   { key: 'saves', label: 'SV', defaultVisible: false },
   { key: 'shutouts', label: 'SHO', defaultVisible: false },
-  { key: 'overall', label: 'Overall', defaultVisible: true },
-  { key: 'stdDev', label: 'Std Dev', defaultVisible: true },
+  { key: 'fppg', label: 'FPPG', defaultVisible: false, help: 'Fantasy points per game, averaged over the last 3 seasons and weighted by games played.' },
+  { key: 'overall', label: 'Overall', defaultVisible: true, help: 'Total fantasy points from last season.' },
+  { key: 'stdDev', label: 'Std Dev', defaultVisible: true, help: 'Games-weighted standard deviation of fantasy points per game across seasons. Lower = steadier.' },
+  { key: 'consistency', label: 'Consistency', defaultVisible: true, help: 'Coefficient of variation of fantasy points per game (std dev ÷ FPPG). Lower = more consistent.' },
+  { key: 'reliability', label: 'Reliability', defaultVisible: true, help: 'How much proven sample a player has: total games played ÷ (games + 30). Higher = number is more trustworthy.' },
+  { key: 'adjustedFppg', label: 'Forecast', defaultVisible: false, help: 'FPPG pulled toward the position average when sample is small. Best per-game projection for the upcoming season.' },
 ];
 
 const STORAGE_DRAFTED = 'nhl-fantasy-draft:drafted';
-const STORAGE_COLUMNS = 'nhl-fantasy-draft:columns';
+const STORAGE_COLUMNS = 'nhl-fantasy-draft:columns:v2';
 const STORAGE_POSITIONS = 'nhl-fantasy-draft:positions';
 
 const POSITIONS = ['C', 'LW', 'RW', 'D', 'G'];
@@ -64,6 +68,18 @@ function formatNumber(value) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '—';
   if (Number.isInteger(value)) return String(value);
   return String(+value.toFixed(2));
+}
+
+function formatCell(colKey, value) {
+  if (colKey === 'reliability') {
+    if (typeof value !== 'number' || Number.isNaN(value)) return '—';
+    return (Math.round(value * 1000) / 10) + '%';
+  }
+  if (colKey === 'consistency') {
+    if (typeof value !== 'number' || Number.isNaN(value)) return '—';
+    return value.toFixed(3);
+  }
+  return formatNumber(value);
 }
 
 function App() {
@@ -118,14 +134,18 @@ function App() {
     const needle = query.trim().toLowerCase();
     let rows = data.players;
     if (needle) {
-      rows = rows.filter((p) =>
-        [p.name, p.team, POSITION_LABELS[p.position] ?? p.position]
-          .join(' ')
-          .toLowerCase()
-          .includes(needle)
-      );
+      rows = rows.filter((p) => {
+        const poss = editedPositions[p.id] && editedPositions[p.id].length ? editedPositions[p.id] : p.positions;
+        const posText = poss.map((pos) => POSITION_LABELS[pos] ?? pos).join(' ');
+        return [p.name, p.team, posText].join(' ').toLowerCase().includes(needle);
+      });
     }
-    if (position !== 'All') rows = rows.filter((p) => p.position === position);
+    if (position !== 'All') {
+      rows = rows.filter((p) => {
+        const poss = editedPositions[p.id] && editedPositions[p.id].length ? editedPositions[p.id] : p.positions;
+        return poss.includes(position);
+      });
+    }
     if (hideDrafted) rows = rows.filter((p) => !drafted.has(p.id));
 
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -139,7 +159,7 @@ function App() {
       return (av - bv) * dir;
     });
     return rows;
-  }, [data.players, query, position, hideDrafted, drafted, sortKey, sortDir]);
+  }, [data.players, query, position, hideDrafted, drafted, editedPositions, sortKey, sortDir]);
 
   const handleSort = (key) => {
     if (key === sortKey) {
@@ -176,9 +196,11 @@ function App() {
           Position
           <select value={position} onChange={(e) => setPosition(e.target.value)}>
             <option value="All">All</option>
-            <option value="F">F</option>
-            <option value="D">D</option>
-            <option value="G">G</option>
+            {POSITIONS.map((pos) => (
+              <option key={pos} value={pos}>
+                {pos}
+              </option>
+            ))}
           </select>
         </label>
         <label className="checkbox">
@@ -203,6 +225,7 @@ function App() {
                 <th
                   key={col.key}
                   className={sortKey === col.key ? `sorted-${sortDir}` : ''}
+                  title={col.help}
                   onClick={() => handleSort(col.key)}
                 >
                   {col.label}
@@ -226,19 +249,52 @@ function App() {
                     </button>
                   </td>
                   {visibleCols.map((col) => (
-                    <td key={col.key} className={col.key === 'stdDev' ? 'num' : ''}>
+                    <td key={col.key} className={col.key !== 'name' && col.key !== 'team' ? 'num' : ''}>
                       {col.key === 'name' ? (
                         <span className="player-name">
                           {player.name}
-                          <span className={`pos-badge pos-${player.position.toLowerCase()}`}>
-                            {player.position}
+                          <span className="pos-badges">
+                            {getPositions(player).map((pos) => (
+                              <button
+                                key={pos}
+                                type="button"
+                                title={`Remove ${POSITION_LABELS[pos]} eligibility`}
+                                className={`pos-badge pos-${pos.toLowerCase()}`}
+                                onClick={() => togglePosition(player.id, pos)}
+                              >
+                                {pos}
+                              </button>
+                            ))}
                           </span>
+                          <details
+                            className="pos-picker"
+                            onToggle={(e) => {
+                              if (e.target.open) e.stopPropagation();
+                            }}
+                          >
+                            <summary title="Edit position eligibility">+</summary>
+                            <span className="pos-picker-menu">
+                              {POSITIONS.map((pos) => {
+                                const active = getPositions(player).includes(pos);
+                                return (
+                                  <label key={pos} className="checkbox">
+                                    <input
+                                      type="checkbox"
+                                      checked={active}
+                                      onChange={() => togglePosition(player.id, pos)}
+                                    />
+                                    {pos} · {POSITION_LABELS[pos]}
+                                  </label>
+                                );
+                              })}
+                            </span>
+                          </details>
                         </span>
                       ) : col.key === 'team' ? (
                         player.team
-                      ) : (
-                        formatNumber(player[col.key])
-                      )}
+                       ) : (
+                         formatCell(col.key, player[col.key])
+                       )}
                     </td>
                   ))}
                 </tr>
