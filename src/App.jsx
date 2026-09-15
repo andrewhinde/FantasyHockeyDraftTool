@@ -98,6 +98,27 @@ function ConsistencyBadge({ value }) {
   );
 }
 
+function reliabilityGrade(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return null;
+  if (value >= 0.85) return { label: 'Very High', tone: 'great' };
+  if (value >= 0.7) return { label: 'High', tone: 'good' };
+  if (value >= 0.55) return { label: 'Medium', tone: 'mid' };
+  return { label: 'Low', tone: 'low' };
+}
+
+function ReliabilityBadge({ value }) {
+  const grade = reliabilityGrade(value);
+  if (!grade) return <span className="cell-muted">—</span>;
+  return (
+    <span
+      className={`cons-badge rel-${grade.tone}`}
+      title={`Reliability ${(value * 100).toFixed(1)}% — confidence weight on this player's own history`}
+    >
+      {grade.label}
+    </span>
+  );
+}
+
 function App() {
   const [query, setQuery] = useState('');
   const [position, setPosition] = useState('All');
@@ -357,6 +378,8 @@ function App() {
                         player.team
                       ) : col.key === 'consistency' ? (
                         <ConsistencyBadge value={player.consistency} />
+                      ) : col.key === 'reliability' ? (
+                        <ReliabilityBadge value={player.reliability} />
                       ) : (
                         formatCell(col.key, player[col.key])
                       )}

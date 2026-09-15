@@ -24,7 +24,7 @@ const GOALIE_SCORING = {
 };
 
 const POSITION_ORDER = ['C', 'LW', 'RW', 'D', 'G'];
-const PRIOR_GAMES = 30;
+const PRIOR_GAMES = 41;
 
 function normalizePosition(code) {
   if (code === 'C') return 'C';
