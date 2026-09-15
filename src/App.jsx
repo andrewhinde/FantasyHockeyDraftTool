@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import data from './data/players.json';
 import ColumnPicker from './components/ColumnPicker.jsx';
+import ScoringPanel from './components/ScoringPanel.jsx';
+import MyTeamPanel from './components/MyTeamPanel.jsx';
 
 const COLUMNS = [
   { key: 'name', label: 'Name', defaultVisible: true },
@@ -161,12 +163,10 @@ function App() {
       });
     }
     if (hideTaken) rows = rows.filter((p) => drafted[p.id] !== 'other');
+    rows = rows.filter((p) => drafted[p.id] !== 'me');
 
     const dir = sortDir === 'asc' ? 1 : -1;
     rows = [...rows].sort((a, b) => {
-      const ra = drafted[a.id] === 'me' ? 0 : 1;
-      const rb = drafted[b.id] === 'me' ? 0 : 1;
-      if (ra !== rb) return ra - rb;
       const av = a[sortKey];
       const bv = b[sortKey];
       if (av == null && bv == null) return 0;
@@ -369,6 +369,14 @@ function App() {
         </table>
         {players.length === 0 && <div className="empty">No players match.</div>}
       </div>
+
+      <ScoringPanel skaterScoring={data.skaterScoring} goalieScoring={data.goalieScoring} />
+      <MyTeamPanel
+        players={data.players}
+        drafted={drafted}
+        editedPositions={editedPositions}
+        onRemove={(id) => setPlayerStatus(id, null)}
+      />
     </div>
   );
 }
