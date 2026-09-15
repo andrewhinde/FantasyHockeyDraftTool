@@ -23,7 +23,7 @@ const COLUMNS = [
   { key: 'adjustedFppg', label: 'Forecast', defaultVisible: false, help: 'FPPG pulled toward the position average when sample is small. Best per-game projection for the upcoming season.' },
 ];
 
-const STORAGE_DRAFTED = 'nhl-fantasy-draft:drafted';
+const STORAGE_DRAFTED = 'nhl-fantasy-draft:drafted:v2';
 const STORAGE_COLUMNS = 'nhl-fantasy-draft:columns:v2';
 const STORAGE_POSITIONS = 'nhl-fantasy-draft:positions';
 
@@ -39,9 +39,9 @@ const POSITION_LABELS = {
 function loadDrafted() {
   try {
     const raw = localStorage.getItem(STORAGE_DRAFTED);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
+    return raw ? JSON.parse(raw) : {};
   } catch {
-    return new Set();
+    return {};
   }
 }
 
@@ -99,7 +99,7 @@ function ConsistencyBadge({ value }) {
 function App() {
   const [query, setQuery] = useState('');
   const [position, setPosition] = useState('All');
-  const [hideDrafted, setHideDrafted] = useState(false);
+  const [hideTaken, setHideTaken] = useState(false);
   const [sortKey, setSortKey] = useState('overall');
   const [sortDir, setSortDir] = useState('desc');
   const [visibleColumns, setVisibleColumns] = useState(loadColumns);
@@ -124,12 +124,12 @@ function App() {
     });
   };
 
-  const toggleDrafted = (playerId) => {
+  const setPlayerStatus = (playerId, status) => {
     setDrafted((prev) => {
-      const next = new Set(prev);
-      if (next.has(playerId)) next.delete(playerId);
-      else next.add(playerId);
-      localStorage.setItem(STORAGE_DRAFTED, JSON.stringify([...next]));
+      const next = { ...prev };
+      if (status) next[playerId] = status;
+      else delete next[playerId];
+      localStorage.setItem(STORAGE_DRAFTED, JSON.stringify(next));
       return next;
     });
   };
@@ -160,10 +160,13 @@ function App() {
         return poss.includes(position);
       });
     }
-    if (hideDrafted) rows = rows.filter((p) => !drafted.has(p.id));
+    if (hideTaken) rows = rows.filter((p) => drafted[p.id] !== 'other');
 
     const dir = sortDir === 'asc' ? 1 : -1;
     rows = [...rows].sort((a, b) => {
+      const ra = drafted[a.id] === 'me' ? 0 : 1;
+      const rb = drafted[b.id] === 'me' ? 0 : 1;
+      if (ra !== rb) return ra - rb;
       const av = a[sortKey];
       const bv = b[sortKey];
       if (av == null && bv == null) return 0;
@@ -173,7 +176,7 @@ function App() {
       return (av - bv) * dir;
     });
     return rows;
-  }, [data.players, query, position, hideDrafted, drafted, editedPositions, sortKey, sortDir]);
+  }, [data.players, query, position, hideTaken, drafted, editedPositions, sortKey, sortDir]);
 
   const handleSort = (key) => {
     if (key === sortKey) {
@@ -184,7 +187,32 @@ function App() {
     }
   };
 
-  const visibleCols = COLUMNS.filter((c) => visibleColumns.has(c.key) || c.key === 'name');
+  const effectiveColumns = useMemo(() => {
+    const set = new Set(visibleColumns);
+    const goalieView = position === 'All' || position === 'G';
+    if (goalieView) {
+      set.add('wins');
+      set.add('losses');
+    } else {
+      set.delete('wins');
+      set.delete('losses');
+    }
+    if (position === 'G') {
+      set.delete('goals');
+      set.delete('assists');
+    }
+    return set;
+  }, [visibleColumns, position]);
+
+  const visibleCols = COLUMNS.filter((c) => effectiveColumns.has(c.key) || c.key === 'name');
+  const lockedCols = useMemo(() => {
+    const set = new Set(['name', 'wins', 'losses']);
+    if (position === 'G') {
+      set.add('goals');
+      set.add('assists');
+    }
+    return set;
+  }, [position]);
 
   const sortIndicator = (key) => {
     if (key !== sortKey) return '';
@@ -220,12 +248,12 @@ function App() {
         <label className="checkbox">
           <input
             type="checkbox"
-            checked={hideDrafted}
-            onChange={(e) => setHideDrafted(e.target.checked)}
+            checked={hideTaken}
+            onChange={(e) => setHideTaken(e.target.checked)}
           />
-          Hide drafted
+          Hide taken
         </label>
-        <ColumnPicker columns={COLUMNS} visible={visibleColumns} onChange={setColumnVisible} />
+        <ColumnPicker columns={COLUMNS} visible={effectiveColumns} lockedKeys={lockedCols} onChange={setColumnVisible} />
       </div>
 
       <div className="summary">Showing {players.length.toLocaleString()} players</div>
@@ -250,17 +278,31 @@ function App() {
           </thead>
           <tbody>
             {players.map((player) => {
-              const isDrafted = drafted.has(player.id);
+              const status = drafted[player.id] ?? null;
               return (
-                <tr key={player.id} className={isDrafted ? 'drafted' : ''}>
+                <tr
+                  key={player.id}
+                  className={status === 'me' ? 'my-pick' : status === 'other' ? 'taken' : ''}
+                >
                   <td className="draft-col">
-                    <button
-                      type="button"
-                      className={isDrafted ? 'draft-btn drafted' : 'draft-btn'}
-                      onClick={() => toggleDrafted(player.id)}
-                    >
-                      {isDrafted ? 'Undraft' : 'Draft'}
-                    </button>
+                    <span className="draft-actions">
+                      <button
+                        type="button"
+                        className={status === 'me' ? 'draft-btn mine active' : 'draft-btn'}
+                        onClick={() => setPlayerStatus(player.id, status === 'me' ? null : 'me')}
+                        title="Mark as your pick"
+                      >
+                        Mine
+                      </button>
+                      <button
+                        type="button"
+                        className={status === 'other' ? 'draft-btn taken active' : 'draft-btn'}
+                        onClick={() => setPlayerStatus(player.id, status === 'other' ? null : 'other')}
+                        title="Mark as drafted by another team"
+                      >
+                        Taken
+                      </button>
+                    </span>
                   </td>
                   {visibleCols.map((col) => (
                     <td key={col.key} className={col.key !== 'name' && col.key !== 'team' ? 'num' : ''}>
