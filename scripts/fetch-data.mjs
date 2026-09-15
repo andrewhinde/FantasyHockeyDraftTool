@@ -1,0 +1,197 @@
+import { writeFile, mkdir } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const BASE = 'https://api.nhle.com/stats/rest/en';
+const SEASONS = ['20232024', '20242025', '20252026'];
+const PAGE_SIZE = 100;
+const REQUEST_DELAY_MS = 300;
+
+const SKATER_SCORING = {
+  goals: 3,
+  assists: 2,
+  plusMinus: 0.5,
+  penaltyMinutes: 0.2,
+  hits: 0.1,
+  blockedShots: 0.1,
+};
+
+const GOALIE_SCORING = {
+  wins: 1,
+  losses: -1,
+  saves: 0.1,
+  shutouts: 1,
+};
+
+const delay = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+
+async function fetchJson(url) {
+  let lastError;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'nhl-fantasy-draft-tool/1.0' },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      await delay(REQUEST_DELAY_MS);
+      return await res.json();
+    } catch (err) {
+      lastError = err;
+      await delay(attempt * attempt * 1000);
+    }
+  }
+  throw lastError;
+}
+
+async function fetchAll(report, seasonId) {
+  const rows = [];
+  let start = 0;
+  for (;;) {
+    const params = new URLSearchParams({
+      cayenneExp: `gameTypeId=2 and seasonId=${seasonId}`,
+      limit: String(PAGE_SIZE),
+      start: String(start),
+    });
+    const page = await fetchJson(`${BASE}/${report}?${params}`);
+    rows.push(...page.data);
+    if (!page.data || page.data.length < PAGE_SIZE) break;
+    start += PAGE_SIZE;
+  }
+  return rows;
+}
+
+function skaterScore(row) {
+  let total = 0;
+  for (const [stat, value] of Object.entries(SKATER_SCORING)) {
+    total += (row[stat] ?? 0) * value;
+  }
+  return total;
+}
+
+function goalieScore(row) {
+  let total = 0;
+  for (const [stat, value] of Object.entries(GOALIE_SCORING)) {
+    total += (row[stat] ?? 0) * value;
+  }
+  return total;
+}
+
+function sampleStdDev(values) {
+  if (values.length < 2) return null;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance = values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / (values.length - 1);
+  return Math.sqrt(variance);
+}
+
+function round(value, places = 2) {
+  const factor = 10 ** places;
+  return Math.round(value * factor) / factor;
+}
+
+const players = new Map();
+
+function getPlayer(id) {
+  if (!players.has(id)) players.set(id, { id, position: null, team: '', name: '', seasons: {} });
+  return players.get(id);
+}
+
+for (const seasonId of SEASONS) {
+  const [summary, realtime, goalies] = await Promise.all([
+    fetchAll('skater/summary', seasonId),
+    fetchAll('skater/realtime', seasonId),
+    fetchAll('goalie/summary', seasonId),
+  ]);
+
+  const realtimeByPlayer = new Map(realtime.map((r) => [r.playerId, r]));
+
+  for (const row of summary) {
+    if (!(row.gamesPlayed > 0)) continue;
+    const player = getPlayer(row.playerId);
+    const code = row.positionCode;
+    player.position = code === 'D' ? 'D' : 'F';
+    player.name = row.skaterFullName;
+    if (row.teamAbbrevs) player.team = row.teamAbbrevs;
+    const rt = realtimeByPlayer.get(row.playerId) ?? {};
+    const season = {
+      gamesPlayed: row.gamesPlayed,
+      goals: row.goals ?? 0,
+      assists: row.assists ?? 0,
+      plusMinus: row.plusMinus ?? 0,
+      penaltyMinutes: row.penaltyMinutes ?? 0,
+      hits: rt.hits ?? 0,
+      blockedShots: rt.blockedShots ?? 0,
+    };
+    season.overall = round(skaterScore(season));
+    player.seasons[seasonId] = season;
+  }
+
+  for (const row of goalies) {
+    if (!(row.gamesPlayed > 0)) continue;
+    const player = getPlayer(row.playerId);
+    player.position = 'G';
+    player.name = row.goalieFullName;
+    if (row.teamAbbrevs) player.team = row.teamAbbrevs;
+    const season = {
+      gamesPlayed: row.gamesPlayed,
+      wins: row.wins ?? 0,
+      losses: row.losses ?? 0,
+      saves: row.saves ?? 0,
+      shutouts: row.shutouts ?? 0,
+    };
+    season.overall = round(goalieScore(season));
+    player.seasons[seasonId] = season;
+  }
+
+  console.log(`${seasonId}: ${summary.length} skaters, ${goalies.length} goalies`);
+}
+
+const output = [];
+for (const player of players.values()) {
+  const ordered = SEASONS.map((s) => player.seasons[s]).filter(Boolean);
+  const played = ordered.filter((s) => s.gamesPlayed > 0);
+  const last = ordered[ordered.length - 1];
+  const totals = played.map((s) => s.overall);
+  const stdDev = sampleStdDev(totals);
+
+  output.push({
+    id: player.id,
+    name: player.name,
+    position: player.position,
+    team: player.team,
+    goals: last.goals ?? 0,
+    assists: last.assists ?? 0,
+    plusMinus: last.plusMinus ?? 0,
+    penaltyMinutes: last.penaltyMinutes ?? 0,
+    hits: last.hits ?? 0,
+    blockedShots: last.blockedShots ?? 0,
+    wins: last.wins ?? 0,
+    losses: last.losses ?? 0,
+    saves: last.saves ?? 0,
+    shutouts: last.shutouts ?? 0,
+    overall: round(last.overall ?? 0),
+    stdDev: stdDev === null ? null : round(stdDev),
+    seasons: player.seasons,
+  });
+}
+
+const payload = {
+  generatedAt: new Date().toISOString(),
+  seasons: SEASONS,
+  skaterScoring: SKATER_SCORING,
+  goalieScoring: GOALIE_SCORING,
+  players: output,
+};
+
+const outDir = dirname(fileURLToPath(import.meta.url)).replace(/[\\/]scripts$/, '/src/data');
+await mkdir(outDir, { recursive: true });
+const outFile = resolve(outDir, 'players.json');
+await writeFile(outFile, JSON.stringify(payload, null, 2), 'utf8');
+
+const drafted = output.length;
+const lastSeason = SEASONS[SEASONS.length - 1];
+const ranked = [...output].filter((p) => p.overall > 0).sort((a, b) => b.overall - a.overall);
+console.log(`Wrote ${drafted} players to ${outFile}`);
+console.log(`Top 10 by ${lastSeason} overall:`);
+for (const p of ranked.slice(0, 10)) {
+  console.log(`  ${p.name} (${p.position}, ${p.team}) overall=${p.overall} stdDev=${p.stdDev}`);
+}
