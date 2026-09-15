@@ -147,6 +147,19 @@ thead th.sorted-asc {
   color: var(--text);
 }
 
+.help-icon {
+  margin-left: 5px;
+  vertical-align: -1px;
+  color: var(--muted);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+thead th:hover .help-icon {
+  color: var(--accent);
+  opacity: 1;
+}
+
 thead th:first-of-type,
 thead th:nth-child(2) {
   text-align: left;
