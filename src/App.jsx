@@ -15,11 +15,11 @@ const COLUMNS = [
   { key: 'losses', label: 'L', defaultVisible: true },
   { key: 'saves', label: 'SV', defaultVisible: false },
   { key: 'shutouts', label: 'SHO', defaultVisible: false },
-  { key: 'fppg', label: 'FPPG', defaultVisible: false, help: 'Fantasy points per game, averaged over the last 3 seasons and weighted by games played.' },
   { key: 'overall', label: 'Overall', defaultVisible: true, help: 'Total fantasy points from last season.' },
-  { key: 'stdDev', label: 'Std Dev', defaultVisible: true, help: 'Games-weighted standard deviation of fantasy points per game across seasons. Lower = steadier.' },
-  { key: 'consistency', label: 'Consistency', defaultVisible: true, help: 'Coefficient of variation of fantasy points per game (std dev ÷ FPPG). Lower = more consistent.' },
-  { key: 'reliability', label: 'Reliability', defaultVisible: true, help: 'How much proven sample a player has: total games played ÷ (games + 30). Higher = number is more trustworthy.' },
+  { key: 'stdDev', label: 'Std Dev', defaultVisible: true },
+  { key: 'consistency', label: 'Consistency', defaultVisible: true },
+  { key: 'reliability', label: 'Reliability', defaultVisible: true },
+  { key: 'fppg', label: 'FPPG', defaultVisible: false, help: 'Fantasy points per game, averaged over the last 3 seasons and weighted by games played.' },
   { key: 'adjustedFppg', label: 'Forecast', defaultVisible: false, help: 'FPPG pulled toward the position average when sample is small. Best per-game projection for the upcoming season.' },
 ];
 
