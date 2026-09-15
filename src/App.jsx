@@ -16,9 +16,9 @@ const COLUMNS = [
   { key: 'saves', label: 'SV', defaultVisible: false },
   { key: 'shutouts', label: 'SHO', defaultVisible: false },
   { key: 'overall', label: 'Overall', defaultVisible: true, help: 'Total fantasy points from last season.' },
-  { key: 'stdDev', label: 'Std Dev', defaultVisible: true },
-  { key: 'consistency', label: 'Consistency', defaultVisible: true },
-  { key: 'reliability', label: 'Reliability', defaultVisible: true },
+  { key: 'stdDev', label: 'Std Dev', defaultVisible: true, help: 'Games-weighted standard deviation of fantasy points per game across seasons. Lower = steadier.' },
+  { key: 'consistency', label: 'Consistency', defaultVisible: true, help: 'Grade based on the coefficient of variation of fantasy points per game (CV = std dev ÷ FPPG). Very High < 0.1, High < 0.2, Medium < 0.3, otherwise Low. Lower CV = more consistent.' },
+  { key: 'reliability', label: 'Reliability', defaultVisible: true, help: 'How much proven sample a player has: total games played ÷ (games + 30). Higher = number is more trustworthy.' },
   { key: 'fppg', label: 'FPPG', defaultVisible: false, help: 'Fantasy points per game, averaged over the last 3 seasons and weighted by games played.' },
   { key: 'adjustedFppg', label: 'Forecast', defaultVisible: false, help: 'FPPG pulled toward the position average when sample is small. Best per-game projection for the upcoming season.' },
 ];
@@ -75,11 +75,25 @@ function formatCell(colKey, value) {
     if (typeof value !== 'number' || Number.isNaN(value)) return '—';
     return (Math.round(value * 1000) / 10) + '%';
   }
-  if (colKey === 'consistency') {
-    if (typeof value !== 'number' || Number.isNaN(value)) return '—';
-    return value.toFixed(3);
-  }
   return formatNumber(value);
+}
+
+function consistencyGrade(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return null;
+  if (value < 0.1) return { label: 'Very High', tone: 'great' };
+  if (value < 0.2) return { label: 'High', tone: 'good' };
+  if (value < 0.3) return { label: 'Medium', tone: 'mid' };
+  return { label: 'Low', tone: 'low' };
+}
+
+function ConsistencyBadge({ value }) {
+  const grade = consistencyGrade(value);
+  if (!grade) return <span className="cell-muted">—</span>;
+  return (
+    <span className={`cons-badge cons-${grade.tone}`} title={`CV ${value.toFixed(3)} — lower is more consistent`}>
+      {grade.label}
+    </span>
+  );
 }
 
 function App() {
@@ -250,7 +264,7 @@ function App() {
                   </td>
                   {visibleCols.map((col) => (
                     <td key={col.key} className={col.key !== 'name' && col.key !== 'team' ? 'num' : ''}>
-                      {col.key === 'name' ? (
+{col.key === 'name' ? (
                         <span className="player-name">
                           {player.name}
                           <span className="pos-badges">
@@ -292,9 +306,11 @@ function App() {
                         </span>
                       ) : col.key === 'team' ? (
                         player.team
-                       ) : (
-                         formatCell(col.key, player[col.key])
-                       )}
+                      ) : col.key === 'consistency' ? (
+                        <ConsistencyBadge value={player.consistency} />
+                      ) : (
+                        formatCell(col.key, player[col.key])
+                      )}
                     </td>
                   ))}
                 </tr>
