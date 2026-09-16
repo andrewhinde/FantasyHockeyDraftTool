@@ -18,15 +18,15 @@ const COLUMNS = [
   { key: 'saves', label: 'SV', defaultVisible: false },
   { key: 'shutouts', label: 'SHO', defaultVisible: false },
   { key: 'overall', label: 'Overall', defaultVisible: true, help: 'Total fantasy points from last season.' },
-  { key: 'stdDev', label: 'Std Dev', defaultVisible: true, help: 'Games-weighted standard deviation of fantasy points per game across seasons. Lower = steadier.' },
+  { key: 'stdDev', label: 'Std Dev', defaultVisible: false, help: 'Games-weighted standard deviation of fantasy points per game across seasons. Lower = steadier.' },
   { key: 'consistency', label: 'Consistency', defaultVisible: true, help: 'Grade based on the coefficient of variation of fantasy points per game (CV = std dev ÷ FPPG). Very High < 0.1, High < 0.2, Medium < 0.3, otherwise Low. Lower CV = more consistent.' },
-  { key: 'reliability', label: 'Reliability', defaultVisible: true, help: 'How much proven sample a player has: total games played ÷ (games + 30). Higher = number is more trustworthy.' },
-  { key: 'fppg', label: 'FPPG', defaultVisible: false, help: 'Fantasy points per game, averaged over the last 3 seasons and weighted by games played.' },
-  { key: 'adjustedFppg', label: 'Forecast', defaultVisible: false, help: 'FPPG pulled toward the position average when sample is small. Best per-game projection for the upcoming season.' },
+  { key: 'reliability', label: 'Reliability', defaultVisible: true, help: 'How much proven sample a player has: total games played ÷ (games + 41). Higher = number is more trustworthy.' },
+  { key: 'fppg', label: 'FPPG', defaultVisible: true, help: 'Fantasy points per game, averaged over the last 3 seasons and weighted by games played.' },
+  { key: 'adjustedFppg', label: 'Forecast', defaultVisible: true, help: 'FPPG pulled toward the position average when sample is small. Best per-game projection for the upcoming season.' },
 ];
 
 const STORAGE_DRAFTED = 'nhl-fantasy-draft:drafted:v2';
-const STORAGE_COLUMNS = 'nhl-fantasy-draft:columns:v2';
+const STORAGE_COLUMNS = 'nhl-fantasy-draft:columns:v3';
 const STORAGE_POSITIONS = 'nhl-fantasy-draft:positions';
 
 const POSITIONS = ['C', 'LW', 'RW', 'D', 'G'];
@@ -122,7 +122,7 @@ function ReliabilityBadge({ value }) {
 function App() {
   const [query, setQuery] = useState('');
   const [position, setPosition] = useState('All');
-  const [hideTaken, setHideTaken] = useState(false);
+  const [hideTaken, setHideTaken] = useState(true);
   const [sortKey, setSortKey] = useState('overall');
   const [sortDir, setSortDir] = useState('desc');
   const [visibleColumns, setVisibleColumns] = useState(loadColumns);
@@ -184,7 +184,6 @@ function App() {
       });
     }
     if (hideTaken) rows = rows.filter((p) => drafted[p.id] !== 'other');
-    rows = rows.filter((p) => drafted[p.id] !== 'me');
 
     const dir = sortDir === 'asc' ? 1 : -1;
     rows = [...rows].sort((a, b) => {
@@ -398,7 +397,6 @@ function App() {
         players={data.players}
         drafted={drafted}
         editedPositions={editedPositions}
-        onRemove={(id) => setPlayerStatus(id, null)}
       />
     </div>
   );
