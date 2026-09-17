@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const BASE = 'https://api.nhle.com/stats/rest/en';
+const CBS_INJURIES_URL = 'https://www.cbssports.com/nhl/injuries/';
 const SEASONS = ['20232024', '20242025', '20252026'];
 const PAGE_SIZE = 100;
 const REQUEST_DELAY_MS = 300;
@@ -69,6 +70,38 @@ async function fetchAll(report, seasonId) {
     start += PAGE_SIZE;
   }
   return rows;
+}
+
+function normalizeName(name) {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+}
+
+async function fetchInjuries() {
+  const res = await fetch(CBS_INJURIES_URL, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; nhl-fantasy-draft-tool/1.0)' },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${CBS_INJURIES_URL}`);
+  const html = await res.text();
+  const strip = (value) => value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  const injuries = new Map();
+  const rows = html.matchAll(/<tr class="TableBase-bodyTr">([\s\S]*?)<\/tr>/g);
+  for (const [, body] of rows) {
+    const cells = [...body.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => strip(m[1]));
+    if (cells.length < 5) continue;
+    const nameMatch = body.match(/CellPlayerName--long[^>]*>\s*<span[^>]*>\s*<a[^>]*>([\s\S]*?)<\/a>/);
+    const name = strip(nameMatch ? nameMatch[1] : cells[0]);
+    if (!name) continue;
+    injuries.set(normalizeName(name), {
+      description: cells[3],
+      status: cells[4],
+      updatedOn: cells[2],
+    });
+  }
+  return injuries;
 }
 
 function skaterScore(row) {
@@ -187,6 +220,11 @@ for (const [pos, acc] of Object.entries(baselineTotals)) {
   baselines[pos] = acc.gp > 0 ? acc.sum / acc.gp : 0;
 }
 
+const injuries = await fetchInjuries().catch((err) => {
+  console.warn(`Injury fetch failed, continuing without it: ${err.message}`);
+  return new Map();
+});
+
 const output = [];
 for (const player of players.values()) {
   const ordered = SEASONS.map((s) => player.seasons[s]).filter(Boolean);
@@ -209,6 +247,7 @@ for (const player of players.values()) {
     position: primary,
     positions,
     team: player.team,
+    injury: injuries.get(normalizeName(player.name)) ?? null,
     goals: last.goals ?? 0,
     assists: last.assists ?? 0,
     plusMinus: last.plusMinus ?? 0,
@@ -243,9 +282,11 @@ const outFile = resolve(outDir, 'players.json');
 await writeFile(outFile, JSON.stringify(payload, null, 2), 'utf8');
 
 const drafted = output.length;
+const injured = output.filter((p) => p.injury).length;
 const lastSeason = SEASONS[SEASONS.length - 1];
 const ranked = [...output].filter((p) => p.overall > 0).sort((a, b) => b.overall - a.overall);
 console.log(`Wrote ${drafted} players to ${outFile}`);
+console.log(`Injuries matched: ${injured} players`);
 console.log(`Top 10 by ${lastSeason} overall:`);
 for (const p of ranked.slice(0, 10)) {
   console.log(`  ${p.name} (${p.position}, ${p.team}) overall=${p.overall} stdDev=${p.stdDev}`);

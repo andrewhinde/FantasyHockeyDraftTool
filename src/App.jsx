@@ -7,6 +7,7 @@ import MyTeamPanel from './components/MyTeamPanel.jsx';
 const COLUMNS = [
   { key: 'name', label: 'Name', defaultVisible: true },
   { key: 'team', label: 'Team', defaultVisible: true },
+  { key: 'injury', label: 'INJ', defaultVisible: true, help: 'Injury status (from CBS Sports). A red icon marks an injured player — hover it for the injury type and expected return.' },
   { key: 'goals', label: 'G', defaultVisible: true },
   { key: 'assists', label: 'A', defaultVisible: true },
   { key: 'plusMinus', label: '+/-', defaultVisible: false },
@@ -26,7 +27,7 @@ const COLUMNS = [
 ];
 
 const STORAGE_DRAFTED = 'nhl-fantasy-draft:drafted:v2';
-const STORAGE_COLUMNS = 'nhl-fantasy-draft:columns:v3';
+const STORAGE_COLUMNS = 'nhl-fantasy-draft:columns:v4';
 const STORAGE_POSITIONS = 'nhl-fantasy-draft:positions';
 
 const POSITIONS = ['C', 'LW', 'RW', 'D', 'G'];
@@ -119,6 +120,25 @@ function ReliabilityBadge({ value }) {
   );
 }
 
+function InjuryBadge({ injury }) {
+  if (!injury) return null;
+  const title = [
+    injury.description ? `Injury: ${injury.description}` : null,
+    injury.status || null,
+    injury.updatedOn ? `Updated ${injury.updatedOn}` : null,
+  ]
+    .filter(Boolean)
+    .join(' — ');
+  return (
+    <span className="injury-badge" title={title}>
+      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+        <rect x="1.4" y="1.4" width="13.2" height="13.2" rx="3" fill="none" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M8 4.8v6.4M4.8 8h6.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
 function App() {
   const [query, setQuery] = useState('');
   const [position, setPosition] = useState('All');
@@ -187,8 +207,8 @@ function App() {
 
     const dir = sortDir === 'asc' ? 1 : -1;
     rows = [...rows].sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
+      const av = sortKey === 'injury' ? (a.injury ? 1 : 0) : a[sortKey];
+      const bv = sortKey === 'injury' ? (b.injury ? 1 : 0) : b[sortKey];
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
@@ -332,7 +352,7 @@ function App() {
                     </span>
                   </td>
                   {visibleCols.map((col) => (
-                    <td key={col.key} className={col.key !== 'name' && col.key !== 'team' ? 'num' : ''}>
+                    <td key={col.key} className={!['name', 'team', 'injury'].includes(col.key) ? 'num' : ''}>
 {col.key === 'name' ? (
                         <span className="player-name">
                           {player.name}
@@ -375,6 +395,8 @@ function App() {
                         </span>
                       ) : col.key === 'team' ? (
                         player.team
+                      ) : col.key === 'injury' ? (
+                        <InjuryBadge injury={player.injury} />
                       ) : col.key === 'consistency' ? (
                         <ConsistencyBadge value={player.consistency} />
                       ) : col.key === 'reliability' ? (

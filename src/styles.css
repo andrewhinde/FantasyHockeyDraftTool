@@ -398,6 +398,16 @@ td.num {
   color: var(--muted);
 }
 
+.injury-badge {
+  display: inline-flex;
+  color: #f87171;
+  vertical-align: -2px;
+}
+
+.injury-badge:hover {
+  color: #fca5a5;
+}
+
 .empty {
   padding: 24px;
   text-align: center;
