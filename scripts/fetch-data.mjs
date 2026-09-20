@@ -26,6 +26,7 @@ const GOALIE_SCORING = {
 
 const POSITION_ORDER = ['C', 'LW', 'RW', 'D', 'G'];
 const PRIOR_GAMES = 41;
+const TREND_THRESHOLD = 0.12;
 
 function normalizePosition(code) {
   if (code === 'C') return 'C';
@@ -225,6 +226,27 @@ const injuries = await fetchInjuries().catch((err) => {
   return new Map();
 });
 
+function computeTrend(player) {
+  const played = SEASONS.map((seasonId, i) => {
+    const season = player.seasons[seasonId];
+    return season && season.gamesPlayed > 0 ? { x: i, y: season.overall / season.gamesPlayed } : null;
+  }).filter(Boolean);
+  if (played.length < 2) return null;
+  const n = played.length;
+  const sx = played.reduce((a, q) => a + q.x, 0);
+  const sy = played.reduce((a, q) => a + q.y, 0);
+  const sxx = played.reduce((a, q) => a + q.x * q.x, 0);
+  const sxy = played.reduce((a, q) => a + q.x * q.y, 0);
+  const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+  const mean = sy / n;
+  if (mean > 0) {
+    const drift = slope / mean;
+    if (drift > TREND_THRESHOLD) return 'up';
+    if (drift < -TREND_THRESHOLD) return 'down';
+  }
+  return 'flat';
+}
+
 const output = [];
 for (const player of players.values()) {
   const ordered = SEASONS.map((s) => player.seasons[s]).filter(Boolean);
@@ -261,6 +283,7 @@ for (const player of players.values()) {
     overall: round(last.overall ?? 0),
     fppg: round(mean),
     adjustedFppg: round(adjustedFppg),
+    trend: computeTrend(player),
     stdDev: player._seasonCount >= 2 ? round(std) : null,
     consistency: consistency === null ? null : round(consistency, 3),
     reliability: round(reliability, 3),

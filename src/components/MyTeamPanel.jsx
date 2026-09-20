@@ -3,17 +3,12 @@ import { useIsMobile } from '../useIsMobile.js';
 
 const ORDER = ['C', 'LW', 'RW', 'D', 'G'];
 
-function positionsFor(player, editedPositions) {
-  const edited = editedPositions[player.id];
-  return edited && edited.length ? edited : player.positions;
-}
-
 function rank(pos) {
   const i = ORDER.indexOf(pos);
   return i === -1 ? 99 : i;
 }
 
-function MyTeamPanel({ players, drafted, editedPositions }) {
+function MyTeamPanel({ players, drafted }) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(() => !isMobile);
 
@@ -25,14 +20,13 @@ function MyTeamPanel({ players, drafted, editedPositions }) {
     () =>
       players
         .filter((p) => drafted[p.id] === 'me')
-        .map((p) => ({ player: p, positions: positionsFor(p, editedPositions) }))
         .sort((a, b) => {
           const ra = rank(a.positions[0]);
           const rb = rank(b.positions[0]);
           if (ra !== rb) return ra - rb;
-          return a.player.name.localeCompare(b.player.name);
+          return a.name.localeCompare(b.name);
         }),
-    [players, drafted, editedPositions]
+    [players, drafted]
   );
 
   return (
@@ -71,11 +65,11 @@ function MyTeamPanel({ players, drafted, editedPositions }) {
             <div className="team-panel-empty">No players selected yet.</div>
           ) : (
             <ul className="team-list">
-              {team.map(({ player, positions }) => (
+              {team.map((player) => (
                 <li key={player.id} className="team-item">
                   <span className="team-item-name">{player.name}</span>
                   <span className="team-item-pos">
-                    {positions.map((pos) => (
+                    {player.positions.map((pos) => (
                       <span key={pos} className={`pos-badge pos-${pos.toLowerCase()}`}>
                         {pos}
                       </span>

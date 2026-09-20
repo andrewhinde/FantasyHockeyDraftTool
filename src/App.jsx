@@ -27,8 +27,7 @@ const COLUMNS = [
 ];
 
 const STORAGE_DRAFTED = 'nhl-fantasy-draft:drafted:v2';
-const STORAGE_COLUMNS = 'nhl-fantasy-draft:columns:v4';
-const STORAGE_POSITIONS = 'nhl-fantasy-draft:positions';
+const STORAGE_COLUMNS = 'nhl-fantasy-draft:columns:v5';
 
 const POSITIONS = ['C', 'LW', 'RW', 'D', 'G'];
 const POSITION_LABELS = {
@@ -56,15 +55,6 @@ function loadColumns() {
     /* ignore */
   }
   return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));
-}
-
-function loadPositions() {
-  try {
-    const raw = localStorage.getItem(STORAGE_POSITIONS);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
 }
 
 function formatNumber(value) {
@@ -120,6 +110,29 @@ function ReliabilityBadge({ value }) {
   );
 }
 
+function TrendBadge({ trend }) {
+  const dir = trend === 'up' ? 'up' : trend === 'down' ? 'down' : null;
+  const titles = {
+    up: 'Trending up over the last 3 seasons',
+    down: 'Trending down over the last 3 seasons',
+  };
+  return (
+    <span className={dir ? `trend-badge trend-${dir}` : 'trend-badge'} title={dir ? titles[dir] : undefined}>
+      {dir && (
+        dir === 'up' ? (
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+            <path d="M3.5 12.5L12.5 3.5M12.5 3.5H6M12.5 3.5v6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+            <path d="M3.5 3.5L12.5 12.5M12.5 12.5H6M12.5 12.5V6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+        )
+      )}
+    </span>
+  );
+}
+
 function InjuryBadge({ injury }) {
   if (!injury) return null;
   const title = [
@@ -147,25 +160,6 @@ function App() {
   const [sortDir, setSortDir] = useState('desc');
   const [visibleColumns, setVisibleColumns] = useState(loadColumns);
   const [drafted, setDrafted] = useState(loadDrafted);
-  const [editedPositions, setEditedPositions] = useState(loadPositions);
-
-  const getPositions = (player) => {
-    const edited = editedPositions[player.id];
-    return edited && edited.length ? edited : player.positions;
-  };
-
-  const togglePosition = (playerId, pos) => {
-    setEditedPositions((prev) => {
-      const current = prev[playerId] ?? [];
-      const has = current.includes(pos);
-      const next = has ? current.filter((p) => p !== pos) : [...current, pos].sort((a, b) => POSITIONS.indexOf(a) - POSITIONS.indexOf(b));
-      const map = { ...prev };
-      if (next.length) map[playerId] = next;
-      else delete map[playerId];
-      localStorage.setItem(STORAGE_POSITIONS, JSON.stringify(map));
-      return map;
-    });
-  };
 
   const setPlayerStatus = (playerId, status) => {
     setDrafted((prev) => {
@@ -192,16 +186,12 @@ function App() {
     let rows = data.players;
     if (needle) {
       rows = rows.filter((p) => {
-        const poss = editedPositions[p.id] && editedPositions[p.id].length ? editedPositions[p.id] : p.positions;
-        const posText = poss.map((pos) => POSITION_LABELS[pos] ?? pos).join(' ');
+        const posText = p.positions.map((pos) => POSITION_LABELS[pos] ?? pos).join(' ');
         return [p.name, p.team, posText].join(' ').toLowerCase().includes(needle);
       });
     }
     if (position !== 'All') {
-      rows = rows.filter((p) => {
-        const poss = editedPositions[p.id] && editedPositions[p.id].length ? editedPositions[p.id] : p.positions;
-        return poss.includes(position);
-      });
+      rows = rows.filter((p) => p.positions.includes(position));
     }
     if (hideTaken) rows = rows.filter((p) => drafted[p.id] !== 'other');
 
@@ -216,7 +206,7 @@ function App() {
       return (av - bv) * dir;
     });
     return rows;
-  }, [data.players, query, position, hideTaken, drafted, editedPositions, sortKey, sortDir]);
+  }, [data.players, query, position, hideTaken, drafted, sortKey, sortDir]);
 
   const handleSort = (key) => {
     if (key === sortKey) {
@@ -357,41 +347,17 @@ function App() {
                         <span className="player-name">
                           {player.name}
                           <span className="pos-badges">
-                            {getPositions(player).map((pos) => (
-                              <button
+                            {player.positions.map((pos) => (
+                              <span
                                 key={pos}
-                                type="button"
-                                title={`Remove ${POSITION_LABELS[pos]} eligibility`}
+                                title={`${POSITION_LABELS[pos] ?? pos} (per NHL API)`}
                                 className={`pos-badge pos-${pos.toLowerCase()}`}
-                                onClick={() => togglePosition(player.id, pos)}
                               >
                                 {pos}
-                              </button>
+                              </span>
                             ))}
                           </span>
-                          <details
-                            className="pos-picker"
-                            onToggle={(e) => {
-                              if (e.target.open) e.stopPropagation();
-                            }}
-                          >
-                            <summary title="Edit position eligibility">+</summary>
-                            <span className="pos-picker-menu">
-                              {POSITIONS.map((pos) => {
-                                const active = getPositions(player).includes(pos);
-                                return (
-                                  <label key={pos} className="checkbox">
-                                    <input
-                                      type="checkbox"
-                                      checked={active}
-                                      onChange={() => togglePosition(player.id, pos)}
-                                    />
-                                    {pos} · {POSITION_LABELS[pos]}
-                                  </label>
-                                );
-                              })}
-                            </span>
-                          </details>
+                          <TrendBadge trend={player.trend} />
                         </span>
                       ) : col.key === 'team' ? (
                         player.team
@@ -418,7 +384,6 @@ function App() {
       <MyTeamPanel
         players={data.players}
         drafted={drafted}
-        editedPositions={editedPositions}
       />
     </div>
   );
