@@ -3,6 +3,7 @@ import data from './data/players.json';
 import ColumnPicker from './components/ColumnPicker.jsx';
 import ScoringPanel from './components/ScoringPanel.jsx';
 import MyTeamPanel from './components/MyTeamPanel.jsx';
+import TradeAnalyzer from './components/TradeAnalyzer.jsx';
 
 const COLUMNS = [
   { key: 'name', label: 'Name', defaultVisible: true },
@@ -153,6 +154,7 @@ function InjuryBadge({ injury }) {
 }
 
 function App() {
+  const [view, setView] = useState('draft');
   const [query, setQuery] = useState('');
   const [position, setPosition] = useState('All');
   const [hideTaken, setHideTaken] = useState(true);
@@ -256,6 +258,25 @@ function App() {
         {data.players.length.toLocaleString()} players · last season {data.seasons.at(-1).replace(/(....)(....)/, '$1-$2')}
       </div>
 
+      <div className="view-tabs">
+        <button
+          type="button"
+          className={view === 'draft' ? 'tab active' : 'tab'}
+          onClick={() => setView('draft')}
+        >
+          Draft
+        </button>
+        <button
+          type="button"
+          className={view === 'trades' ? 'tab active' : 'tab'}
+          onClick={() => setView('trades')}
+        >
+          Trades
+        </button>
+      </div>
+
+      {view === 'draft' ? (
+        <>
       <div className="toolbar">
         <input
           className="search"
@@ -385,6 +406,14 @@ function App() {
         players={data.players}
         drafted={drafted}
       />
+        </>
+      ) : (
+        <TradeAnalyzer
+          players={data.players}
+          skaterScoring={data.skaterScoring}
+          goalieScoring={data.goalieScoring}
+        />
+      )}
     </div>
   );
 }
